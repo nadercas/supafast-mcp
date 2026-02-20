@@ -17,7 +17,7 @@ import { databaseTools, handleDatabaseQuery, handleCreateTable, handleListTables
 import { migrationTools, handleCreateMigration, handleListMigrations, handleApplyMigration, handleRollbackMigration, handleGetMigrationStatus } from './tools/migrations.js';
 import { storageTools, handleCreateBucket, handleListBuckets, handleUploadFile, handleDownloadFile, handleDeleteFile, handleListFiles } from './tools/storage.js';
 import { rlsTools, handleCreateRLSPolicy, handleListRLSPolicies, handleDeleteRLSPolicy, handleEnableRLS, handleDisableRLS } from './tools/rls.js';
-import { edgeFunctionTools, handleCreateEdgeFunction, handleListEdgeFunctions, handleDeleteEdgeFunction, handleInvokeEdgeFunction } from './tools/edge-functions.js';
+import { edgeFunctionTools, handleCreateEdgeFunction, handleListEdgeFunctions, handleDeleteEdgeFunction, handleInvokeEdgeFunction, handleSetSecret, handleDeleteSecret, handleListSecrets } from './tools/edge-functions.js';
 import { realtimeTools, handleCreateRealtimeSubscription, handleListRealtimeSubscriptions, handleDeleteRealtimeSubscription } from './tools/realtime.js';
 import { adminTools, handleGetDatabaseStats, handleGetUserStats, handleBackupDatabase, handleRestoreDatabase, handleGetSystemInfo } from './tools/admin.js';
 import { logsTools, handleGetLogs, handleGetMetrics, handleGetErrorLogs } from './tools/logs.js';
@@ -148,6 +148,12 @@ class SupabaseMCPServer {
             return { content: [{ type: 'text', text: JSON.stringify(await handleDeleteEdgeFunction(args)) }] };
           case 'invoke_edge_function':
             return { content: [{ type: 'text', text: JSON.stringify(await handleInvokeEdgeFunction(args)) }] };
+          case 'set_secret':
+            return { content: [{ type: 'text', text: JSON.stringify(await handleSetSecret(args)) }] };
+          case 'delete_secret':
+            return { content: [{ type: 'text', text: JSON.stringify(await handleDeleteSecret(args)) }] };
+          case 'list_secrets':
+            return { content: [{ type: 'text', text: JSON.stringify(await handleListSecrets()) }] };
 
           // Herramientas de Realtime
           case 'create_realtime_subscription':

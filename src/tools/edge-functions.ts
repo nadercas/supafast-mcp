@@ -11,6 +11,41 @@ const getFunctionsDir = (): string => {
   return dir;
 };
 
+const getEnvPath = (): string => {
+  return path.join(getFunctionsDir(), '.env');
+};
+
+const parseEnvFile = (content: string): Map<string, string> => {
+  const env = new Map<string, string>();
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex === -1) continue;
+    const key = trimmed.slice(0, eqIndex).trim();
+    let value = trimmed.slice(eqIndex + 1).trim();
+    // Strip surrounding quotes
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    env.set(key, value);
+  }
+  return env;
+};
+
+const serializeEnvFile = (env: Map<string, string>): string => {
+  const lines: string[] = [];
+  for (const [key, value] of env) {
+    // Quote values that contain spaces, newlines, or special chars
+    if (/[\s#"'\\$]/.test(value)) {
+      lines.push(`${key}="${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
+    } else {
+      lines.push(`${key}=${value}`);
+    }
+  }
+  return lines.join('\n') + '\n';
+};
+
 export const edgeFunctionTools: Tool[] = [
   {
     name: 'create_edge_function',
@@ -49,6 +84,34 @@ export const edgeFunctionTools: Tool[] = [
       },
       required: ['name']
     }
+  },
+  {
+    name: 'set_secret',
+    description: 'Set an environment variable (secret) for Edge Functions. Written to the .env file in the functions directory, available to all functions via Deno.env.get().',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Environment variable name (e.g. STRIPE_SECRET_KEY)' },
+        value: { type: 'string', description: 'Secret value' }
+      },
+      required: ['key', 'value']
+    }
+  },
+  {
+    name: 'delete_secret',
+    description: 'Remove an environment variable (secret) from the Edge Functions .env file.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Environment variable name to remove' }
+      },
+      required: ['key']
+    }
+  },
+  {
+    name: 'list_secrets',
+    description: 'List all Edge Function secret names. Values are masked for security.',
+    inputSchema: { type: 'object', properties: {} }
   },
   {
     name: 'invoke_edge_function',
@@ -147,6 +210,83 @@ export const handleDeleteEdgeFunction = async (args: unknown) => {
     return { success: true, message: `Edge Function '${name}' deleted successfully` };
   } catch (error) {
     logError(error as Error, 'delete_edge_function');
+    return { success: false, error: (error as Error).message };
+  }
+};
+
+export const handleSetSecret = async (args: unknown) => {
+  const { key, value } = args as { key: string; value: string };
+
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    return { success: false, error: 'Invalid key name. Use letters, numbers, and underscores only.' };
+  }
+
+  try {
+    const envPath = getEnvPath();
+    let env = new Map<string, string>();
+    if (fs.existsSync(envPath)) {
+      env = parseEnvFile(fs.readFileSync(envPath, 'utf8'));
+    }
+
+    const existed = env.has(key);
+    env.set(key, value);
+    fs.writeFileSync(envPath, serializeEnvFile(env), 'utf8');
+
+    logInfo(`Secret '${key}' ${existed ? 'updated' : 'created'}`);
+    return {
+      success: true,
+      message: `Secret '${key}' ${existed ? 'updated' : 'created'} successfully`,
+      note: 'Available to all Edge Functions via Deno.env.get() on next invocation'
+    };
+  } catch (error) {
+    logError(error as Error, 'set_secret');
+    return { success: false, error: (error as Error).message };
+  }
+};
+
+export const handleDeleteSecret = async (args: unknown) => {
+  const { key } = args as { key: string };
+
+  try {
+    const envPath = getEnvPath();
+    if (!fs.existsSync(envPath)) {
+      return { success: false, error: 'No secrets file exists' };
+    }
+
+    const env = parseEnvFile(fs.readFileSync(envPath, 'utf8'));
+    if (!env.has(key)) {
+      return { success: false, error: `Secret '${key}' not found` };
+    }
+
+    env.delete(key);
+    fs.writeFileSync(envPath, serializeEnvFile(env), 'utf8');
+
+    logInfo(`Secret '${key}' deleted`);
+    return { success: true, message: `Secret '${key}' deleted successfully` };
+  } catch (error) {
+    logError(error as Error, 'delete_secret');
+    return { success: false, error: (error as Error).message };
+  }
+};
+
+export const handleListSecrets = async () => {
+  try {
+    const envPath = getEnvPath();
+    if (!fs.existsSync(envPath)) {
+      return { success: true, secrets: [], message: 'No secrets configured' };
+    }
+
+    const env = parseEnvFile(fs.readFileSync(envPath, 'utf8'));
+    const secrets = Array.from(env.entries()).map(([key, value]) => ({
+      key,
+      value: value.slice(0, 3) + '•'.repeat(Math.min(value.length - 3, 20)),
+      length: value.length
+    }));
+
+    logInfo(`Listed ${secrets.length} secrets`);
+    return { success: true, secrets };
+  } catch (error) {
+    logError(error as Error, 'list_secrets');
     return { success: false, error: (error as Error).message };
   }
 };
