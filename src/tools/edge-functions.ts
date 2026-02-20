@@ -14,7 +14,7 @@ const getFunctionsDir = (): string => {
 
 const restartEdgeRuntime = (): boolean => {
   try {
-    execSync('docker restart supabase-edge-functions', { timeout: 30000 });
+    execSync('sudo docker restart supabase-edge-functions', { timeout: 30000 });
     logInfo('Edge Runtime container restarted');
     return true;
   } catch (error) {
