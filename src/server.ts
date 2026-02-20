@@ -27,11 +27,18 @@ class SupabaseMCPServer {
   private allTools: Tool[];
 
   constructor() {
-    this.server = new Server({
-      name: 'supabase-mcp-server',
-      version: '1.0.0',
-      description: 'Servidor MCP completo para Supabase Self-Hosted'
-    });
+    this.server = new Server(
+      {
+        name: 'supabase-mcp-server',
+        version: '1.0.0',
+        description: 'Servidor MCP completo para Supabase Self-Hosted'
+      },
+      {
+        capabilities: {
+          tools: {}
+        }
+      }
+    );
 
     // Combinar todas las herramientas
     this.allTools = [
