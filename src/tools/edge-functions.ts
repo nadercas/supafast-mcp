@@ -3,12 +3,24 @@ import { getConnection } from '../utils/connection.js';
 import { logError, logInfo } from '../utils/logger.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 
 const getFunctionsDir = (): string => {
   const dir = process.env.SUPABASE_FUNCTIONS_DIR;
   if (!dir) throw new Error('SUPABASE_FUNCTIONS_DIR not set in environment');
   if (!fs.existsSync(dir)) throw new Error(`Functions directory not found: ${dir}`);
   return dir;
+};
+
+const restartEdgeRuntime = (): boolean => {
+  try {
+    execSync('docker restart supabase-edge-functions', { timeout: 30000 });
+    logInfo('Edge Runtime container restarted');
+    return true;
+  } catch (error) {
+    logError(error as Error, 'restart_edge_runtime');
+    return false;
+  }
 };
 
 const getEnvPath = (): string => {
@@ -232,11 +244,15 @@ export const handleSetSecret = async (args: unknown) => {
     env.set(key, value);
     fs.writeFileSync(envPath, serializeEnvFile(env), 'utf8');
 
+    const restarted = restartEdgeRuntime();
     logInfo(`Secret '${key}' ${existed ? 'updated' : 'created'}`);
     return {
       success: true,
       message: `Secret '${key}' ${existed ? 'updated' : 'created'} successfully`,
-      note: 'Available to all Edge Functions via Deno.env.get() on next invocation'
+      restarted,
+      note: restarted
+        ? 'Edge Runtime restarted — secret is live now'
+        : 'Secret saved but container restart failed. Run: docker restart supabase-edge-functions'
     };
   } catch (error) {
     logError(error as Error, 'set_secret');
@@ -261,8 +277,16 @@ export const handleDeleteSecret = async (args: unknown) => {
     env.delete(key);
     fs.writeFileSync(envPath, serializeEnvFile(env), 'utf8');
 
+    const restarted = restartEdgeRuntime();
     logInfo(`Secret '${key}' deleted`);
-    return { success: true, message: `Secret '${key}' deleted successfully` };
+    return {
+      success: true,
+      message: `Secret '${key}' deleted successfully`,
+      restarted,
+      note: restarted
+        ? 'Edge Runtime restarted — secret removed'
+        : 'Secret removed but container restart failed. Run: docker restart supabase-edge-functions'
+    };
   } catch (error) {
     logError(error as Error, 'delete_secret');
     return { success: false, error: (error as Error).message };
