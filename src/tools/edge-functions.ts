@@ -3,24 +3,12 @@ import { getConnection } from '../utils/connection.js';
 import { logError, logInfo } from '../utils/logger.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
 
 const getFunctionsDir = (): string => {
   const dir = process.env.SUPABASE_FUNCTIONS_DIR;
   if (!dir) throw new Error('SUPABASE_FUNCTIONS_DIR not set in environment');
   if (!fs.existsSync(dir)) throw new Error(`Functions directory not found: ${dir}`);
   return dir;
-};
-
-const restartEdgeRuntime = (): boolean => {
-  try {
-    execSync('sudo docker restart supabase-edge-functions', { timeout: 30000 });
-    logInfo('Edge Runtime container restarted');
-    return true;
-  } catch (error) {
-    logError(error as Error, 'restart_edge_runtime');
-    return false;
-  }
 };
 
 const getEnvPath = (): string => {
@@ -43,19 +31,6 @@ const parseEnvFile = (content: string): Map<string, string> => {
     env.set(key, value);
   }
   return env;
-};
-
-const serializeEnvFile = (env: Map<string, string>): string => {
-  const lines: string[] = [];
-  for (const [key, value] of env) {
-    // Quote values that contain spaces, newlines, or special chars
-    if (/[\s#"'\\$]/.test(value)) {
-      lines.push(`${key}="${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
-    } else {
-      lines.push(`${key}=${value}`);
-    }
-  }
-  return lines.join('\n') + '\n';
 };
 
 export const edgeFunctionTools: Tool[] = [
@@ -99,7 +74,7 @@ export const edgeFunctionTools: Tool[] = [
   },
   {
     name: 'set_secret',
-    description: 'Set an environment variable (secret) for Edge Functions. Written to the .env file in the functions directory, available to all functions via Deno.env.get().',
+    description: 'Secrets must be managed via the admin panel for security. This tool returns instructions for the user.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -111,7 +86,7 @@ export const edgeFunctionTools: Tool[] = [
   },
   {
     name: 'delete_secret',
-    description: 'Remove an environment variable (secret) from the Edge Functions .env file.',
+    description: 'Secrets must be managed via the admin panel for security. This tool returns instructions for the user.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -227,70 +202,25 @@ export const handleDeleteEdgeFunction = async (args: unknown) => {
 };
 
 export const handleSetSecret = async (args: unknown) => {
-  const { key, value } = args as { key: string; value: string };
+  const { key } = args as { key: string; value: string };
 
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
-    return { success: false, error: 'Invalid key name. Use letters, numbers, and underscores only.' };
-  }
-
-  try {
-    const envPath = getEnvPath();
-    let env = new Map<string, string>();
-    if (fs.existsSync(envPath)) {
-      env = parseEnvFile(fs.readFileSync(envPath, 'utf8'));
-    }
-
-    const existed = env.has(key);
-    env.set(key, value);
-    fs.writeFileSync(envPath, serializeEnvFile(env), 'utf8');
-
-    const restarted = restartEdgeRuntime();
-    logInfo(`Secret '${key}' ${existed ? 'updated' : 'created'}`);
-    return {
-      success: true,
-      message: `Secret '${key}' ${existed ? 'updated' : 'created'} successfully`,
-      restarted,
-      note: restarted
-        ? 'Edge Runtime restarted — secret is live now'
-        : 'Secret saved but container restart failed. Run: docker restart supabase-edge-functions'
-    };
-  } catch (error) {
-    logError(error as Error, 'set_secret');
-    return { success: false, error: (error as Error).message };
-  }
+  return {
+    success: false,
+    message: `For security, secrets must be managed through the admin panel. Secret values should not pass through the AI context.`,
+    action: `Please open your Supabase admin panel (https://<your-domain>/admin/), click the "Secrets" tab, and add the secret "${key}" there.`,
+    reason: 'This ensures secret values travel directly from your browser to the server over HTTPS, without passing through the LLM context.'
+  };
 };
 
 export const handleDeleteSecret = async (args: unknown) => {
   const { key } = args as { key: string };
 
-  try {
-    const envPath = getEnvPath();
-    if (!fs.existsSync(envPath)) {
-      return { success: false, error: 'No secrets file exists' };
-    }
-
-    const env = parseEnvFile(fs.readFileSync(envPath, 'utf8'));
-    if (!env.has(key)) {
-      return { success: false, error: `Secret '${key}' not found` };
-    }
-
-    env.delete(key);
-    fs.writeFileSync(envPath, serializeEnvFile(env), 'utf8');
-
-    const restarted = restartEdgeRuntime();
-    logInfo(`Secret '${key}' deleted`);
-    return {
-      success: true,
-      message: `Secret '${key}' deleted successfully`,
-      restarted,
-      note: restarted
-        ? 'Edge Runtime restarted — secret removed'
-        : 'Secret removed but container restart failed. Run: docker restart supabase-edge-functions'
-    };
-  } catch (error) {
-    logError(error as Error, 'delete_secret');
-    return { success: false, error: (error as Error).message };
-  }
+  return {
+    success: false,
+    message: `For security, secrets must be managed through the admin panel. Secret values should not pass through the AI context.`,
+    action: `Please open your Supabase admin panel (https://<your-domain>/admin/), click the "Secrets" tab, and delete the secret "${key}" there.`,
+    reason: 'This ensures secret management goes directly from your browser to the server over HTTPS, without passing through the LLM context.'
+  };
 };
 
 export const handleListSecrets = async () => {
@@ -301,10 +231,9 @@ export const handleListSecrets = async () => {
     }
 
     const env = parseEnvFile(fs.readFileSync(envPath, 'utf8'));
-    const secrets = Array.from(env.entries()).map(([key, value]) => ({
+    const secrets = Array.from(env.keys()).map(key => ({
       key,
-      value: value.slice(0, 3) + '•'.repeat(Math.min(value.length - 3, 20)),
-      length: value.length
+      value: '••••••••'
     }));
 
     logInfo(`Listed ${secrets.length} secrets`);
